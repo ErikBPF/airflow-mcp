@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airflow-mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow
+  namespace: airflow-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: airflow-mcp}
+  template:
+    metadata:
+      labels: {app: airflow-mcp}
+    spec:
+      securityContext:
+        runAsUser: 50000
+        runAsGroup: 0
+        fsGroup: 0
+      containers:
+        - name: connection-target
+          image: apache/airflow:3.3.1-python3.13
+          command: [python, -c]
+          args:
+            - |
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              class Handler(BaseHTTPRequestHandler):
+                  def do_POST(self):
+                      self.send_response(204)
+                      self.end_headers()
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("127.0.0.1", 8081), Handler).serve_forever()
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+        - name: airflow
+          image: apache/airflow:3.3.1-python3.13
+          command: [bash, -c]
+          args: ["umask 077; cp /auth/passwords.json /opt/airflow/passwords.json; exec airflow standalone"]
+          env:
+            - {name: AIRFLOW__CORE__LOAD_EXAMPLES, value: "false"}
+            - {name: AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS, value: "admin:admin"}
+            - {name: AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE, value: /opt/airflow/passwords.json}
+            - {name: AIRFLOW__CORE__TEST_CONNECTION, value: Enabled}
+            - {name: AIRFLOW__CORE__PARALLELISM, value: "2"}
+            - {name: AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL, value: "5"}
+          ports: [{containerPort: 8080}]
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {cpu: "2", memory: 3Gi}
+          readinessProbe:
+            httpGet: {path: /api/v2/monitor/health, port: 8080}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          volumeMounts:
+            - {name: home, mountPath: /opt/airflow}
+            - {name: dags, mountPath: /opt/airflow/dags/sandbox_dag.py, subPath: sandbox_dag.py}
+            - {name: auth, mountPath: /auth, readOnly: true}
+      volumes:
+        - name: home
+          emptyDir: {}
+        - name: dags
+          configMap: {name: validation-dag}
+        - name: auth
+          secret: {secretName: airflow-auth}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow
+  namespace: airflow-mcp
+spec:
+  selector: {app: airflow-mcp}
+  ports: [{port: 8080, targetPort: 8080}]

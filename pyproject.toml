@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "airflow-mcp"
+version = "0.1.0"
+description = "Local MCP tools for Apache Airflow operations, inspection, and connection management"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "ErikBPF"}]
+dependencies = ["mcp>=1.12,<2", "httpx>=0.28,<1"]
+
+[project.urls]
+Repository = "https://github.com/ErikBPF/airflow-mcp"
+Issues = "https://github.com/ErikBPF/airflow-mcp/issues"
+
+[project.scripts]
+airflow-mcp = "airflow_mcp.server:main"
